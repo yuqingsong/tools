@@ -10,6 +10,7 @@ import io.netty.channel.Channel;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.jupiter.api.RepeatedTest;
 
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
@@ -73,12 +74,38 @@ public class NettyTcpServerTest {
      * Method: start()
      */
     @Test
+    @RepeatedTest(10)
     public void testStart() throws Exception {
         NettyTcpServer server = startServer();
+        int threadNum =0;
+        if(threadNum>0){
 
+            CountDownLatch c = new CountDownLatch(threadNum);
+            for (int i = 0; i < threadNum; i++) {
+                new Thread(()->{
+                    try {
+                        testSendMsg();
+
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }finally {
+                        c.countDown();
+                    }
+                }).start();
+            }
+            c.await();
+        }else{
+            testSendMsg();
+        }
+        server.stop();
+
+
+    }
+
+    public void testSendMsg() throws InterruptedException {
         NettyTcpClient client = new NettyTcpClient(this.port);
         CountDownLatch c = new CountDownLatch(1);
-        int msgNum = 100000;
+        int msgNum = 1000000;
         AtomicInteger msgCounter = new AtomicInteger();
         client.setChildHandler(new ChildChannelHandler((ch)->{
             ch.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
@@ -110,9 +137,6 @@ public class NettyTcpServerTest {
         long end = System.currentTimeMillis();
         long cost = end -start;
         System.out.println("cost:"+cost+"\tqps:"+msgNum*1000L/cost);
-        server.stop();
-
-
     }
 
     /**
