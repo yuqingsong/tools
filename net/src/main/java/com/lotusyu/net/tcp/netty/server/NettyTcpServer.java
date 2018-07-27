@@ -4,9 +4,7 @@ import com.lotusyu.net.tcp.netty.NettyTcpBase;
 import com.lotusyu.net.tcp.netty.handlers.ChildChannelHandler;
 import com.lotusyu.net.tcp.netty.handlers.InputPrinthandler;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
-import io.netty.buffer.Unpooled;
+import io.netty.buffer.*;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -65,6 +63,7 @@ public class NettyTcpServer extends NettyTcpBase {
         b.group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, 1024)
+//                .option(ChannelOption.ALLOCATOR, UnpooledByteBufAllocator.DEFAULT)
                 .childHandler(getChildHandler());
         // 绑定端口，同步等待成功
         ChannelFuture channelFuture = b.bind(port);
@@ -112,8 +111,10 @@ public class NettyTcpServer extends NettyTcpBase {
                 c.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
                         new InputPrinthandler((ctx, msg) -> {
                             ByteBuf m = (ByteBuf) msg;
-                            CompositeByteBuf byteBufs = Unpooled.compositeBuffer().writeInt(m.readableBytes()).addComponent(true, m);
-                            ctx.writeAndFlush(byteBufs);
+//                            pringByteBufInfo(m);
+                            CompositeByteBuf byteBufs = Unpooled.compositeBuffer().addComponents(true, Unpooled.directBuffer(4).writeInt(m.readableBytes()),m);
+//                            pringByteBufInfo(byteBufs);
+                            ctx.write(byteBufs);
                         })
                 );
 
@@ -123,5 +124,15 @@ public class NettyTcpServer extends NettyTcpBase {
 
 
 
+    }
+
+    public static void pringByteBufInfo(ByteBuf byteBufs) {
+        int len = byteBufs.readableBytes();
+        System.out.println(len);
+        byteBufs.markReaderIndex();
+        byte[] content = new byte[len];
+        byteBufs.readBytes(content);
+        System.out.println(new String(content));
+        byteBufs.resetReaderIndex();
     }
 }

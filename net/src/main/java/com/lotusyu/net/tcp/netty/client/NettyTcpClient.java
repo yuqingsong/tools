@@ -76,12 +76,17 @@ public class NettyTcpClient extends NettyTcpBase {
     public static void main(String[] args) throws Exception {
         int port = 1234;
         String host = "localhost";
-        int msgNum = 1000000;
+//        host = "192.168.80.138";
+        int msgNum = 1000*1000;
+        int msgLength = 100;
         if(args!=null && args.length>1){
             port = Integer.parseInt(args[1]);
             host = args[0];
             if(args.length>2){
                 msgNum = Integer.parseInt(args[2]);
+            }
+            if(args.length>3){
+                msgLength = Integer.parseInt(args[3]);
             }
         }
 
@@ -93,27 +98,30 @@ public class NettyTcpClient extends NettyTcpBase {
             ch.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
                     new InputPrinthandler((ctx, msg) -> {
                         ByteBuf m = (ByteBuf) msg;
-                        m.release();
                         if(msgCounter.incrementAndGet()==finalMsgNum){
-                            System.out.println("completed");
+                            int seq = m.readInt();
+                            int len = m.readableBytes();
+                            byte[] content = new byte[len];
+                            m.readBytes(content);
+                            System.out.println("completed\t msg length:"+ len +"\t seq:"+seq+"\t content:"+ new String(content));
                             c.countDown();
                         }
+                        m.release();
                     })
             );
         }));
         Channel connect = client.connect();
-        String msg = new Random().ints().limit(100).collect(StringBuilder::new, StringBuilder::append, StringBuilder::append).toString();
+        String msg = new Random().ints(0,10).limit(msgLength).collect(StringBuilder::new, StringBuilder::append, StringBuilder::append).toString();
         byte[] bytes = msg.getBytes();
+        System.out.println(bytes.length+"\t"+msg);
 
         long start = System.currentTimeMillis();
         for (int i = 0; i < msgNum; i++) {
-            ByteBuf msgBuf = Unpooled.buffer(bytes.length+4).writeInt(bytes.length).writeBytes(bytes);
+            ByteBuf msgBuf = Unpooled.buffer(bytes.length+8).writeInt(bytes.length+4).writeInt(i).writeBytes(bytes);
             connect.write(msgBuf);
             if(i%10000==0){
                 connect.flush();
                 while(!connect.isWritable()){
-                    System.out.println("sleep");
-                    Thread.sleep(100);
                 }
             }
         }
