@@ -6,6 +6,7 @@ import com.lotusyu.net.tcp.netty.handlers.InputPrinthandler;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.*;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -13,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.lotusyu.net.tcp.netty.handlers.ChildChannelHandler.newLengthFieldBasedFrameDecoder;
 
@@ -107,15 +109,31 @@ public class NettyTcpServer extends NettyTcpBase {
 
 
             NettyTcpServer nettyTcpServer = new NettyTcpServer(port);
+        AtomicInteger receiveCount = new AtomicInteger();
             nettyTcpServer.setChildHandler(new ChildChannelHandler((c)->{
+                c.config().setWriteBufferHighWaterMark(1024*1024);
                 c.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
                         new InputPrinthandler((ctx, msg) -> {
                             ByteBuf m = (ByteBuf) msg;
 //                            pringByteBufInfo(m);
                             CompositeByteBuf byteBufs = Unpooled.compositeBuffer().addComponents(true, Unpooled.directBuffer(4).writeInt(m.readableBytes()),m);
 //                            pringByteBufInfo(byteBufs);
+                            int i = receiveCount.incrementAndGet();
+                            if(i%1000000==0){
+                                System.out.println("receive messages :"+i);
+                            }
                             ctx.write(byteBufs);
-                        })
+                        }){
+                            @Override
+                            public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+                                super.channelWritabilityChanged(ctx);
+                                boolean writable = ctx.channel().isWritable();
+//                                long beforeUnwritable = ctx.channel().bytesBeforeUnwritable();
+                                ctx.channel().config().setAutoRead(writable);
+
+//                                System.out.println(receiveCount.get()+"\tbeforeUnwritable:"+beforeUnwritable+"\tchannelWritabilityChanged:"+ctx.channel().isWritable());
+                            }
+                        }
                 );
 
             }));

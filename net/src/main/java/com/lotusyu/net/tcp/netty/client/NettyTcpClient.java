@@ -98,12 +98,14 @@ public class NettyTcpClient extends NettyTcpBase {
             ch.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
                     new InputPrinthandler((ctx, msg) -> {
                         ByteBuf m = (ByteBuf) msg;
-                        if(msgCounter.incrementAndGet()==finalMsgNum){
-                            int seq = m.readInt();
-                            int len = m.readableBytes();
-                            byte[] content = new byte[len];
-                            m.readBytes(content);
-                            System.out.println("completed\t msg length:"+ len +"\t seq:"+seq+"\t content:"+ new String(content));
+                        int recieverMsgs = msgCounter.incrementAndGet();
+                        if(recieverMsgs%1000000==0){
+                            System.out.print(System.currentTimeMillis()+"\treply messages :"+recieverMsgs+"\t");
+                            printMsgInfo(m);
+                        }
+                        if(recieverMsgs ==finalMsgNum){
+//                            printMsgInfo(m);
+                            System.out.println("completed");
                             c.countDown();
                         }
                         m.release();
@@ -117,9 +119,12 @@ public class NettyTcpClient extends NettyTcpBase {
 
         long start = System.currentTimeMillis();
         for (int i = 0; i < msgNum; i++) {
-            ByteBuf msgBuf = Unpooled.buffer(bytes.length+8).writeInt(bytes.length+4).writeInt(i).writeBytes(bytes);
+            ByteBuf msgBuf = Unpooled.buffer(bytes.length+8).writeInt(bytes.length+4).writeInt(i+1).writeBytes(bytes);
             connect.write(msgBuf);
             if(i%10000==0){
+                if(i%1000000==0){
+                    System.out.println(System.currentTimeMillis()+"\tsend messages :"+i);
+                }
                 connect.flush();
                 while(!connect.isWritable()){
                 }
@@ -127,9 +132,18 @@ public class NettyTcpClient extends NettyTcpBase {
         }
         connect.flush();
         c.await();
+
         long end = System.currentTimeMillis();
         long cost = end -start;
         System.out.println("cost:"+cost+"\tqps:"+msgNum*1000L/cost);
 
+    }
+
+    private static void printMsgInfo(ByteBuf m) {
+        int seq = m.readInt();
+        int len = m.readableBytes();
+        byte[] content = new byte[len];
+        m.readBytes(content);
+        System.out.println("msg length:"+ len +"\t seq:"+seq+"\t content:"+ new String(content));
     }
 }
