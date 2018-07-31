@@ -9,27 +9,28 @@ import java.util.function.BiConsumer;
 
 /**
  * 用于处理接收到的消息
+ *
  * @author: yuqingsong
  * @create: 2018-07-19 16:50
  **/
-public class InputPrinthandler extends ChannelInboundHandlerAdapter {
+public class InputHandler extends ChannelInboundHandlerAdapter {
 
-    private BiConsumer<ChannelHandlerContext,Object> onMessage;
+    private BiConsumer<ChannelHandlerContext, Object> onMessage;
 
-    public InputPrinthandler(BiConsumer<ChannelHandlerContext, Object> onMessage) {
+    public InputHandler(BiConsumer<ChannelHandlerContext, Object> onMessage) {
         this.onMessage = onMessage;
     }
 
-    public InputPrinthandler() {
-        this.onMessage =(ctx,msg)->{
+    public InputHandler() {
+        this.onMessage = (ctx, msg) -> {
             ByteBuf m = (ByteBuf) msg;
             System.out.println(new String(ByteBufUtil.getBytes(m)));
         };
     }
 
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg){
-        this.onMessage.accept(ctx,msg);
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        this.onMessage.accept(ctx, msg);
 
     }
 

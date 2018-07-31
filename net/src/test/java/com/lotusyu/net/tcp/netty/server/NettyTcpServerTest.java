@@ -2,15 +2,15 @@ package com.lotusyu.net.tcp.netty.server;
 
 import com.lotusyu.net.tcp.netty.client.NettyTcpClient;
 import com.lotusyu.net.tcp.netty.handlers.ChildChannelHandler;
-import com.lotusyu.net.tcp.netty.handlers.InputPrinthandler;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
-import io.netty.buffer.Unpooled;
+import com.lotusyu.net.tcp.netty.handlers.InputHandler;
+import com.lotusyu.net.tcp.netty.handlers.RateLimitingHandler;
+import io.netty.buffer.*;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.jupiter.api.RepeatedTest;
 
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
@@ -49,21 +49,9 @@ public class NettyTcpServerTest {
 //        startServer();
     }
 
-    private NettyTcpServer startServer() {
-
-        NettyTcpServer nettyTcpServer = new NettyTcpServer(port);
-        nettyTcpServer.setChildHandler(new ChildChannelHandler((c)->{
-            c.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
-                    new InputPrinthandler((ctx, msg) -> {
-                        ByteBuf m = (ByteBuf) msg;
-                        CompositeByteBuf byteBufs = Unpooled.compositeBuffer().writeInt(m.readableBytes()).addComponent(true, m);
-                        ctx.writeAndFlush(byteBufs);
-                    })
-            );
-        }));
-        nettyTcpServer.start();
+    private void startServer() {
+        NettyTcpServer.startServer4Test(port);
         System.out.println("server started");
-        return nettyTcpServer;
     }
 
     @After
@@ -74,9 +62,9 @@ public class NettyTcpServerTest {
      * Method: start()
      */
     @Test
-    @RepeatedTest(10)
+//    @RepeatedTest(10)
     public void testStart() throws Exception {
-        NettyTcpServer server = startServer();
+        startServer();
         int threadNum =0;
         if(threadNum>0){
 
@@ -97,46 +85,34 @@ public class NettyTcpServerTest {
         }else{
             testSendMsg();
         }
-        server.stop();
+
 
 
     }
 
     public void testSendMsg() throws InterruptedException {
-        NettyTcpClient client = new NettyTcpClient(this.port);
+        String host = "192.168.80.138";
+        host = "localhost";
+        NettyTcpClient client = new NettyTcpClient(host,this.port);
         CountDownLatch c = new CountDownLatch(1);
-        int msgNum = 1000000;
-        AtomicInteger msgCounter = new AtomicInteger();
-        client.setChildHandler(new ChildChannelHandler((ch)->{
-            ch.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
-                    new InputPrinthandler((ctx, msg) -> {
-                        ByteBuf m = (ByteBuf) msg;
-                        m.release();
-                        if(msgCounter.incrementAndGet()==msgNum){
-                            System.out.println("completed");
-                            c.countDown();
-                        }
-                    })
-            );
-        }));
-        Channel connect = client.connect();
-        String msg = "hello";
-        msg = new Random().ints().limit(100).collect(StringBuilder::new, StringBuilder::append, StringBuilder::append).toString();
-        byte[] bytes = msg.getBytes();
-
+        int num = 1*1 * 1000;
+//        num = 3;
+        int msgNum = num;
         long start = System.currentTimeMillis();
-        for (int i = 0; i < msgNum; i++) {
-            ByteBuf msgBuf = Unpooled.buffer(bytes.length+4).writeInt(bytes.length).writeBytes(bytes);
-            connect.write(msgBuf);
-            if(i%10000==0){
-                connect.flush();
+        NettyTcpClient.connect4test(port,host,num,100,(buf,counter)->{
+            if(counter.intValue()==num){
+                int seq = buf.getInt(0);
+                //校验最后一个消息的序号
+                Assert.assertEquals(msgNum,seq);
             }
-        }
-        connect.flush();
-        c.await();
-        long end = System.currentTimeMillis();
+        });
+        long end  = System.currentTimeMillis();
         long cost = end -start;
-        System.out.println("cost:"+cost+"\tqps:"+msgNum*1000L/cost);
+
+        long qps = msgNum * 1000L / cost;
+        //校验性能
+        Assert.assertTrue(qps>100*1000);
+
     }
 
     /**
@@ -152,7 +128,12 @@ public class NettyTcpServerTest {
      */
     @Test
     public void testStartInternal() throws Exception {
-//TODO: Test goes here... 
+        ByteBuf b = Unpooled.directBuffer().writeInt('b');
+        ByteBuf c = Unpooled.directBuffer().writeInt('c');
+        CompositeByteBuf byteBufs = Unpooled.compositeBuffer(2).addComponents(true,b,c);
+        System.out.println("first:"+byteBufs.readInt());
+        System.out.println("second:"+byteBufs.readInt());
+        NettyTcpServer.pringByteBufInfo(byteBufs);
     }
 
     /**

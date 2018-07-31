@@ -7,8 +7,7 @@ package com.lotusyu.net.tcp.netty.client;
 
 import com.lotusyu.net.tcp.netty.NettyTcpBase;
 import com.lotusyu.net.tcp.netty.handlers.ChildChannelHandler;
-import com.lotusyu.net.tcp.netty.handlers.InputPrinthandler;
-import com.lotusyu.net.tcp.netty.server.NettyTcpServer;
+import com.lotusyu.net.tcp.netty.handlers.InputHandler;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -24,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 
 import static com.lotusyu.net.tcp.netty.handlers.ChildChannelHandler.newLengthFieldBasedFrameDecoder;
 
@@ -77,7 +77,7 @@ public class NettyTcpClient extends NettyTcpBase {
         int port = 1234;
         String host = "localhost";
 //        host = "192.168.80.138";
-        int msgNum = 1000*1000;
+        int msgNum = 3*1000*1000;
         int msgLength = 100;
         if(args!=null && args.length>1){
             port = Integer.parseInt(args[1]);
@@ -90,24 +90,33 @@ public class NettyTcpClient extends NettyTcpBase {
             }
         }
 
+        connect4test(port, host, msgNum, msgLength,null);
+
+    }
+
+    public static void connect4test(int port, String host, int msgNum, int msgLength, BiConsumer<ByteBuf,Integer> consumer) throws InterruptedException {
         NettyTcpClient client = new NettyTcpClient(host,port);
         CountDownLatch c = new CountDownLatch(1);
         AtomicInteger msgCounter = new AtomicInteger();
         int finalMsgNum = msgNum;
         client.setChildHandler(new ChildChannelHandler((ch)->{
             ch.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
-                    new InputPrinthandler((ctx, msg) -> {
+                    new InputHandler((ctx, msg) -> {
                         ByteBuf m = (ByteBuf) msg;
                         int recieverMsgs = msgCounter.incrementAndGet();
                         if(recieverMsgs%1000000==0){
                             System.out.print(System.currentTimeMillis()+"\treply messages :"+recieverMsgs+"\t");
                             printMsgInfo(m);
                         }
+                        if(consumer != null){
+                            consumer.accept(m,recieverMsgs);
+                        }
                         if(recieverMsgs ==finalMsgNum){
 //                            printMsgInfo(m);
                             System.out.println("completed");
                             c.countDown();
                         }
+
                         m.release();
                     })
             );
@@ -136,7 +145,6 @@ public class NettyTcpClient extends NettyTcpBase {
         long end = System.currentTimeMillis();
         long cost = end -start;
         System.out.println("cost:"+cost+"\tqps:"+msgNum*1000L/cost);
-
     }
 
     private static void printMsgInfo(ByteBuf m) {

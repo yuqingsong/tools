@@ -33,7 +33,7 @@ public class ChildChannelHandler extends ChannelInitializer<SocketChannel> {
 //        this.onInit = (c,t)->{
 //            if (handlers.isEmpty()) {
 //                LengthFieldBasedFrameDecoder lengthFieldBasedFrameDecoder = newLengthFieldBasedFrameDecoder();
-//                InputPrinthandler inputhandler = new InputPrinthandler();
+//                InputHandler inputhandler = new InputHandler();
 //                c.pipeline().addLast(lengthFieldBasedFrameDecoder).addLast(inputhandler);
 //            } else {
 //                handlers.forEach(h -> c.pipeline().addLast(h));
@@ -52,7 +52,7 @@ public class ChildChannelHandler extends ChannelInitializer<SocketChannel> {
 //    private void addInternal(SocketChannel c) {
 //        if (handlers.isEmpty()) {
 //            LengthFieldBasedFrameDecoder lengthFieldBasedFrameDecoder = newLengthFieldBasedFrameDecoder();
-//            InputPrinthandler inputhandler = new InputPrinthandler();
+//            InputHandler inputhandler = new InputHandler();
 //            c.pipeline().addLast(lengthFieldBasedFrameDecoder).addLast(inputhandler);
 //        } else {
 //            handlers.forEach(h -> c.pipeline().addLast(h));

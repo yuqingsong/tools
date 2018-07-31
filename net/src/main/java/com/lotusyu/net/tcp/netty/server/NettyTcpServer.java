@@ -2,11 +2,10 @@ package com.lotusyu.net.tcp.netty.server;
 
 import com.lotusyu.net.tcp.netty.NettyTcpBase;
 import com.lotusyu.net.tcp.netty.handlers.ChildChannelHandler;
-import com.lotusyu.net.tcp.netty.handlers.InputPrinthandler;
+import com.lotusyu.net.tcp.netty.handlers.RateLimitingHandler;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.*;
 import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -32,7 +31,7 @@ public class NettyTcpServer extends NettyTcpBase {
         this.port = port;
     }
 
-    public void start() {
+    public ChannelFuture start() {
         ChannelFuture channelFuture = startInternal();
         try {
             channelFuture.get();
@@ -41,10 +40,16 @@ public class NettyTcpServer extends NettyTcpBase {
         } catch (ExecutionException e) {
             e.printStackTrace();
         }
+        return channelFuture;
     }
 
     public void startAndBlockExit(){
         ChannelFuture channelFuture = startInternal();
+        waitClose(channelFuture);
+
+    }
+
+    public static void waitClose(ChannelFuture channelFuture) {
         try {
             ChannelFuture f = channelFuture.sync();
             // 等待服务端监听端口关闭
@@ -52,9 +57,7 @@ public class NettyTcpServer extends NettyTcpBase {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-
     }
-
 
 
     public ChannelFuture startInternal() {
@@ -95,7 +98,7 @@ public class NettyTcpServer extends NettyTcpBase {
             }
         }
 //        NettyTcpServer nettyTcpServer = new NettyTcpServer(port);
-//        nettyTcpServer.setChildHandlerProvider(()->new ChildChannelHandler().addIntLengthFiled().add(new InputPrinthandler((ctx, msg)->{
+//        nettyTcpServer.setChildHandlerProvider(()->new ChildChannelHandler().addIntLengthFiled().add(new InputHandler((ctx, msg)->{
 //            ByteBuf m = (ByteBuf) msg;
 //            CompositeByteBuf byteBufs = Unpooled.compositeBuffer().writeInt(m.readableBytes()).addComponent(true,m);
 ////            String hello = "abcd";
@@ -108,40 +111,34 @@ public class NettyTcpServer extends NettyTcpBase {
 //        nettyTcpServer.startAndBlockExit();
 
 
-            NettyTcpServer nettyTcpServer = new NettyTcpServer(port);
+        ChannelFuture channelFuture = startServer4Test(port);
+
+        NettyTcpServer.waitClose(channelFuture);
+
+
+    }
+
+    public static ChannelFuture startServer4Test(int port) {
+        NettyTcpServer nettyTcpServer = new NettyTcpServer(port);
         AtomicInteger receiveCount = new AtomicInteger();
-            nettyTcpServer.setChildHandler(new ChildChannelHandler((c)->{
-                c.config().setWriteBufferHighWaterMark(1024*1024);
-                c.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
-                        new InputPrinthandler((ctx, msg) -> {
-                            ByteBuf m = (ByteBuf) msg;
+        nettyTcpServer.setChildHandler(new ChildChannelHandler((c)->{
+            c.config().setWriteBufferHighWaterMark(1024*1024);
+            c.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
+                    new RateLimitingHandler((ctx, msg) -> {
+                        ByteBuf m = (ByteBuf) msg;
 //                            pringByteBufInfo(m);
-                            CompositeByteBuf byteBufs = Unpooled.compositeBuffer().addComponents(true, Unpooled.directBuffer(4).writeInt(m.readableBytes()),m);
+                        CompositeByteBuf byteBufs = Unpooled.compositeBuffer().addComponents(true, Unpooled.directBuffer(4).writeInt(m.readableBytes()),m);
 //                            pringByteBufInfo(byteBufs);
-                            int i = receiveCount.incrementAndGet();
-                            if(i%1000000==0){
-                                System.out.println("receive messages :"+i);
-                            }
-                            ctx.write(byteBufs);
-                        }){
-                            @Override
-                            public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-                                super.channelWritabilityChanged(ctx);
-                                boolean writable = ctx.channel().isWritable();
-//                                long beforeUnwritable = ctx.channel().bytesBeforeUnwritable();
-                                ctx.channel().config().setAutoRead(writable);
-
-//                                System.out.println(receiveCount.get()+"\tbeforeUnwritable:"+beforeUnwritable+"\tchannelWritabilityChanged:"+ctx.channel().isWritable());
-                            }
+                        int i = receiveCount.incrementAndGet();
+                        if(i%1000000==0){
+                            System.out.println("receive messages :"+i);
                         }
-                );
+                        ctx.write(byteBufs);
+                    })
+            );
 
-            }));
-            nettyTcpServer.startAndBlockExit();
-
-
-
-
+        }));
+        return nettyTcpServer.start();
     }
 
     public static void pringByteBufInfo(ByteBuf byteBufs) {
