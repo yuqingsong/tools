@@ -95,7 +95,7 @@ public class NettyTcpServerTest {
         host = "localhost";
         NettyTcpClient client = new NettyTcpClient(host,this.port);
         CountDownLatch c = new CountDownLatch(1);
-        int num = 1*1 * 1000;
+        int num = 1*1000 * 1000;
 //        num = 3;
         int msgNum = num;
         long start = System.currentTimeMillis();

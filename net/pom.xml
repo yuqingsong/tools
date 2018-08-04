@@ -163,9 +163,7 @@
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
                     <archive>
-                        <manifest>
-                            <mainClass>cn.leke.proxy.http.HttpProxyServer</mainClass>
-                        </manifest>
+
                     </archive>
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>

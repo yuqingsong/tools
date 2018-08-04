@@ -11,17 +11,18 @@ import com.lotusyu.net.tcp.netty.handlers.InputHandler;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.timeout.IdleState;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
@@ -39,7 +40,8 @@ public class NettyTcpClient extends NettyTcpBase {
     private String host = System.getProperty("host", "127.0.0.1");
     private int port = Integer.parseInt(System.getProperty("port", "8080"));
 
-
+    private EventLoopGroup group = new NioEventLoopGroup();
+    private volatile Channel channel;
 
 
     public NettyTcpClient(String host,int port){
@@ -51,8 +53,8 @@ public class NettyTcpClient extends NettyTcpBase {
         this("localhost",port);
     }
 
-    public Channel connect(){
-        EventLoopGroup group = new NioEventLoopGroup();
+    public synchronized Channel connect(){
+
         try {
             Bootstrap b = new Bootstrap();
             b.group(group)
@@ -62,7 +64,14 @@ public class NettyTcpClient extends NettyTcpBase {
 
             // Start the client.
             ChannelFuture f = b.connect(host, port);
-            return f.sync().channel();
+            f.addListener((ChannelFuture future) ->{
+                if(!future.isSuccess()){
+                    EventLoop loop = future.channel().eventLoop();
+                    loop.schedule(()->{reconnect(NettyTcpClient.this);},1,TimeUnit.SECONDS);
+                }
+            });
+            Channel channel = f.sync().channel();
+            return this.channel=channel;
         } catch (Exception e){
             LOG.error("连接异常",e);
         }
@@ -73,11 +82,17 @@ public class NettyTcpClient extends NettyTcpBase {
         return null;
     }
 
+    public void send(ByteBuf msg){
+        channel.writeAndFlush(msg);
+
+    }
+
     public static void main(String[] args) throws Exception {
         int port = 1234;
         String host = "localhost";
 //        host = "192.168.80.138";
         int msgNum = 3*1000*1000;
+        msgNum = 1;
         int msgLength = 100;
         if(args!=null && args.length>1){
             port = Integer.parseInt(args[1]);
@@ -92,6 +107,7 @@ public class NettyTcpClient extends NettyTcpBase {
 
         connect4test(port, host, msgNum, msgLength,null);
 
+
     }
 
     public static void connect4test(int port, String host, int msgNum, int msgLength, BiConsumer<ByteBuf,Integer> consumer) throws InterruptedException {
@@ -99,29 +115,62 @@ public class NettyTcpClient extends NettyTcpBase {
         CountDownLatch c = new CountDownLatch(1);
         AtomicInteger msgCounter = new AtomicInteger();
         int finalMsgNum = msgNum;
-        client.setChildHandler(new ChildChannelHandler((ch)->{
-            ch.pipeline().addLast(newLengthFieldBasedFrameDecoder()).addLast(
-                    new InputHandler((ctx, msg) -> {
-                        ByteBuf m = (ByteBuf) msg;
-                        int recieverMsgs = msgCounter.incrementAndGet();
-                        if(recieverMsgs%1000000==0){
-                            System.out.print(System.currentTimeMillis()+"\treply messages :"+recieverMsgs+"\t");
-                            printMsgInfo(m);
-                        }
-                        if(consumer != null){
-                            consumer.accept(m,recieverMsgs);
-                        }
-                        if(recieverMsgs ==finalMsgNum){
-//                            printMsgInfo(m);
-                            System.out.println("completed");
-                            c.countDown();
-                        }
+        client.setChildHandler(
+                new ChildChannelHandler((ch)->{
+                    ch.pipeline().addLast("idleStateHandler",new IdleStateHandler(5,5,5)).addLast(newLengthFieldBasedFrameDecoder()).addLast(
 
-                        m.release();
-                    })
-            );
-        }));
+                            new InputHandler((ctx, msg) -> {
+                                ByteBuf m = (ByteBuf) msg;
+                                int recieverMsgs = msgCounter.incrementAndGet();
+                                if(m.getInt(0)==-1){
+                                    printMsgInfo(m);
+                                }
+                                if(recieverMsgs%1000000==0){
+                                    System.out.print(System.currentTimeMillis()+"\treply messages :"+recieverMsgs+"\t");
+                                    printMsgInfo(m);
+                                }
+                                if(consumer != null){
+                                    consumer.accept(m,recieverMsgs);
+                                }
+                                if(recieverMsgs ==finalMsgNum){
+//                            printMsgInfo(m);
+                                    System.out.println("completed");
+                                    c.countDown();
+                                }
+
+                                m.release();
+                            }).setOnChannelInactive(ctx->{
+                                ctx.channel().eventLoop().schedule(()->{
+                                    reconnect(client);
+                                },1,TimeUnit.SECONDS);
+
+                            }).setOnUserEventTriggered((ctx,evt)->{
+                                if (IdleStateEvent.class.isAssignableFrom(evt.getClass())) {
+                                    IdleStateEvent event = (IdleStateEvent) evt;
+                                    if (event.state() == IdleState.READER_IDLE) {
+//                                        System.out.println("read idle");
+                                    }else if (event.state() == IdleState.WRITER_IDLE) {
+//                                        System.out.println("write idle");
+                                    }else if (event.state() == IdleState.ALL_IDLE) {
+                                        byte[] bytes = "ping".getBytes();
+                                        ByteBuf msgBuf = Unpooled.buffer(bytes.length + 8).writeInt(bytes.length + 4).writeInt(-1).writeBytes(bytes);
+                                        client.send(msgBuf);
+                                    }
+                                }})
+                    );})
+
+        );
         Channel connect = client.connect();
+
+        if(connect == null){
+            return;
+        }
+
+
+
+
+
+
         String msg = new Random().ints(0,10).limit(msgLength).collect(StringBuilder::new, StringBuilder::append, StringBuilder::append).toString();
         byte[] bytes = msg.getBytes();
         System.out.println(bytes.length+"\t"+msg);
@@ -145,6 +194,11 @@ public class NettyTcpClient extends NettyTcpBase {
         long end = System.currentTimeMillis();
         long cost = end -start;
         System.out.println("cost:"+cost+"\tqps:"+msgNum*1000L/cost);
+    }
+
+    private static void reconnect(NettyTcpClient client) {
+        Channel connect = client.connect();
+        LOG.info("reconnecting:"+connect);
     }
 
     private static void printMsgInfo(ByteBuf m) {

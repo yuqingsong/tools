@@ -1,6 +1,7 @@
 package com.lotusyu.net.tcp.netty.handlers;
 
 import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
@@ -19,7 +20,7 @@ import java.util.function.Consumer;
 
 public class ChildChannelHandler extends ChannelInitializer<SocketChannel> {
 
-    private static final Logger LOG = LoggerFactory.getLogger(ChannelInitializer.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ChildChannelHandler.class);
 
     private List<ChannelHandler> handlers = new ArrayList();
 
@@ -44,6 +45,9 @@ public class ChildChannelHandler extends ChannelInitializer<SocketChannel> {
 
     @Override
     protected void initChannel(SocketChannel c) {
+        if(c != null){
+            LOG.debug(String.valueOf(c.remoteAddress()));
+        }
         LOG.debug("init channel,thread is {}", Thread.currentThread());
         this.onInit.accept(c);
 //        this.addInternal(c);
